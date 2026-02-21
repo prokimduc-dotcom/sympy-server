@@ -10,60 +10,77 @@ import os
 
 app = Flask(__name__)
 
-# Cho phép viết 2x, x^2
+# API KEY (đặt trên Render Environment Variables)
+API_KEY = os.environ.get("API_KEY", "123456")
+
 transformations = (
     standard_transformations +
     (implicit_multiplication_application,) +
     (convert_xor,)
 )
 
+def check_api_key(req):
+    key = req.args.get("apikey")
+    return key == API_KEY
+
 @app.route("/")
 def home():
-    return "SymPy CAS Mini is running!"
+    return """
+    <h2>SymPy CAS Pro Running</h2>
+    <p>Use /calc?expr=...</p>
+    """
 
 @app.route("/calc")
 def calculate():
+
+    if not check_api_key(request):
+        return jsonify({"error": "Invalid API Key"}), 403
+
     expr = request.args.get("expr")
     if not expr:
         return jsonify({"error": "Missing expression"})
 
     try:
-        x = sp.symbols('x')
+        # Tạo nhiều biến tự động
+        symbols = sp.symbols('x y z a b c')
+        local_dict = {str(s): s for s in symbols}
 
-        # Nếu là phương trình có dấu =
+        # Phương trình
         if "=" in expr:
             left, right = expr.split("=")
-            left_expr = parse_expr(left, transformations=transformations)
-            right_expr = parse_expr(right, transformations=transformations)
-            solution = sp.solve(left_expr - right_expr, x)
-            return jsonify({"solution": str(solution)})
+            left_expr = parse_expr(left, transformations=transformations, local_dict=local_dict)
+            right_expr = parse_expr(right, transformations=transformations, local_dict=local_dict)
 
-        # Đạo hàm
-        if expr.startswith("diff("):
-            inside = expr[5:-1]
-            parsed = parse_expr(inside, transformations=transformations)
-            result = sp.diff(parsed, x)
-            return jsonify({"derivative": str(result)})
+            solutions = sp.solve(left_expr - right_expr, symbols)
 
-        # Tích phân
-        if expr.startswith("integrate("):
-            inside = expr[10:-1]
-            parsed = parse_expr(inside, transformations=transformations)
-            result = sp.integrate(parsed, x)
-            return jsonify({"integral": str(result)})
+            steps = [
+                "Move all terms to one side",
+                f"{sp.latex(left_expr - right_expr)} = 0",
+                "Solve equation"
+            ]
 
-        # Tính giá trị nếu có x=...
-        if "," in expr:
-            expression_part, value_part = expr.split(",")
-            parsed = parse_expr(expression_part, transformations=transformations)
-            var, val = value_part.split("=")
-            result = parsed.subs(x, float(val))
-            return jsonify({"value": str(result)})
+            return jsonify({
+                "solution": str(solutions),
+                "latex": sp.latex(solutions),
+                "steps": steps
+            })
 
-        # Mặc định: simplify
-        parsed = parse_expr(expr, transformations=transformations)
-        result = sp.simplify(parsed)
-        return jsonify({"result": str(result)})
+        parsed = parse_expr(expr, transformations=transformations, local_dict=local_dict)
+
+        simplified = sp.simplify(parsed)
+
+        steps = [
+            "Original expression:",
+            sp.latex(parsed),
+            "After simplification:",
+            sp.latex(simplified)
+        ]
+
+        return jsonify({
+            "result": str(simplified),
+            "latex": sp.latex(simplified),
+            "steps": steps
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)})
