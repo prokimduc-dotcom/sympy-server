@@ -11,7 +11,7 @@ import os
 app = Flask(__name__)
 
 # API KEY (đặt trên Render Environment Variables)
-API_KEY = os.environ.get("API_KEY", "123456")
+API_KEY = os.environ.get("API_KEY", "171187")
 
 transformations = (
     standard_transformations +
@@ -88,3 +88,4 @@ def calculate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
