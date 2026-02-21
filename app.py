@@ -2,7 +2,9 @@ from flask import Flask, request, jsonify
 import sympy as sp
 
 app = Flask(__name__)
-
+@app.route("/")
+def home():
+    return "SymPy Server is running!"
 @app.route("/calc")
 def calculate():
     expr = request.args.get("expr")
@@ -17,4 +19,5 @@ def calculate():
         return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
+
     app.run()
