@@ -7,28 +7,41 @@ from sympy.parsing.sympy_parser import (
     convert_xor
 )
 import os
+import re
 
 app = Flask(__name__)
 
-# API KEY (đặt trên Render Environment Variables)
-API_KEY = os.environ.get("API_KEY", "171187")
+# ====== SECURITY ======
+API_KEY = os.environ.get("API_KEY")
+if not API_KEY:
+    raise ValueError("API_KEY not set in environment variables")
 
+def check_api_key(req):
+    return req.args.get("apikey") == API_KEY
+
+
+# ====== PARSER SETTINGS ======
 transformations = (
     standard_transformations +
     (implicit_multiplication_application,) +
     (convert_xor,)
 )
 
-def check_api_key(req):
-    key = req.args.get("apikey")
-    return key == API_KEY
+
+# ====== AUTO DETECT VARIABLES ======
+def extract_symbols(expr):
+    names = set(re.findall(r"[a-zA-Z]+", expr))
+    symbols = {name: sp.symbols(name) for name in names}
+    return symbols
+
 
 @app.route("/")
 def home():
     return """
     <h2>SymPy CAS Pro Running</h2>
-    <p>Use /calc?expr=...</p>
+    <p>Use /calc?apikey=YOUR_KEY&expr=...</p>
     """
+
 
 @app.route("/calc")
 def calculate():
@@ -38,24 +51,27 @@ def calculate():
 
     expr = request.args.get("expr")
     if not expr:
-        return jsonify({"error": "Missing expression"})
+        return jsonify({"error": "Missing expression"}), 400
 
     try:
-        # Tạo nhiều biến tự động
-        symbols = sp.symbols('x y z a b c')
-        local_dict = {str(s): s for s in symbols}
+        local_dict = extract_symbols(expr)
 
-        # Phương trình
+        # ====== HANDLE EQUATION ======
         if "=" in expr:
-            left, right = expr.split("=")
+            left, right = expr.split("=", 1)
+
             left_expr = parse_expr(left, transformations=transformations, local_dict=local_dict)
             right_expr = parse_expr(right, transformations=transformations, local_dict=local_dict)
 
-            solutions = sp.solve(left_expr - right_expr, symbols)
+            equation = left_expr - right_expr
+
+            variables = list(local_dict.values())
+
+            solutions = sp.solve(equation, variables, dict=True)
 
             steps = [
                 "Move all terms to one side",
-                f"{sp.latex(left_expr - right_expr)} = 0",
+                sp.latex(equation) + " = 0",
                 "Solve equation"
             ]
 
@@ -65,6 +81,7 @@ def calculate():
                 "steps": steps
             })
 
+        # ====== NORMAL EXPRESSION ======
         parsed = parse_expr(expr, transformations=transformations, local_dict=local_dict)
 
         simplified = sp.simplify(parsed)
@@ -83,9 +100,9 @@ def calculate():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
